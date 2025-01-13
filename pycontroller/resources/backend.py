@@ -151,7 +151,8 @@ class ModelState(ABC):
                 f.write(
                     f'\t\t<ScalarVariable name="{p[1]}" valueReference="{p[0]}" variability="{str(p[2].variability.name.lower())}" causality="{str(p[2].causality.name.lower())}" ')
                 if p[2].value:
-                    f.write(f'\t\t\t<Boolean start="{str(p[2].value)}" />')
+                    f.write('>\n')
+                    f.write(f'\t\t\t<Boolean start="{str(p[2].value)}" />\n')
                     f.write(f'\t\t</ScalarVariable>\n')
                 else:
                     f.write('/>\n')
