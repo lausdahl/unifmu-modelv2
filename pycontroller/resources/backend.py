@@ -49,6 +49,7 @@ class Fmi2Causality(Enum):
     PARAMETER = 3  # Variables with fixed values provided during initialization.
     CALCULATED_PARAMETER = 4  # Variables calculated from parameters during initialization.
     LOCAL = 5  # Internal variables used within the FMU, not exposed externally.
+    INDEPENDENT = 6
     @classmethod
     def from_string(cls, value: str):
         # Convert string to the correct case
@@ -61,9 +62,9 @@ class Fmi2Causality(Enum):
 
 
 class Fmi2Initial(Enum):
-    FIXED = 1  # The value is fixed and cannot change.
-    CALCULATED = 2  # The value will be calculated during initialization.
-    FREE = 3  # The value is free to change.
+    exact = 1  # The value is fixed and cannot change.
+    approx = 2  # The value will be calculated during initialization.
+    CALCULATED = 3  # The value is free to change.
     @classmethod
     def from_string(cls, value: str):
         # Convert string to the correct case
@@ -129,22 +130,68 @@ class ModelState(ABC):
     def get_value(self, vr):
         return getattr(self.sync_with_model_description[vr], 'value')
 
+
+    def write_model_description(self, ports,path='md.xml'):
+        with open(path, 'w') as f:
+            f.write("""<?xml version='1.0' encoding='utf-8'?>
+        <fmiModelDescription fmiVersion="2.0" modelName="unifmu" guid="77236337-210e-4e9c-8f2c-c1a0677db21b" author="Christian Møldrup Legaard" generationDateAndTime="2020-10-23T19:51:25Z" variableNamingConvention="flat" generationTool="unifmu">
+          <CoSimulation modelIdentifier="unifmu" needsExecutionTool="true" canNotUseMemoryManagementFunctions="false" canHandleVariableCommunicationStepSize="true" />
+          <LogCategories>
+            <Category name="logStatusWarning" />
+            <Category name="logStatusDiscard" />
+            <Category name="logStatusError" />
+            <Category name="logStatusFatal" />
+            <Category name="logStatusPending" />
+            <Category name="logAll" />
+          </LogCategories>
+            <ModelVariables>
+        """)
+            for idx, p in enumerate(ports):
+                f.write(f'\t\t<!--Index of variable = "{idx + 1}"-->\n')
+                f.write(
+                    f'\t\t<ScalarVariable name="{p[1]}" valueReference="{p[0]}" variability="{str(p[2].variability.name.lower())}" causality="{str(p[2].causality.name.lower())}" ')
+                if p[2].value:
+                    f.write(f'\t\t\t<Boolean start="{str(p[2].value)}" />')
+                    f.write(f'\t\t</ScalarVariable>\n')
+                else:
+                    f.write('/>\n')
+            f.write('''\t</ModelVariables>\n\t<ModelStructure>''')
+
+            outputs = [f'<Unknown index="{idx + 1}" dependencies="" />' for idx, p in enumerate(ports) if
+                       p[2].causality == Fmi2Causality.OUTPUT]
+            f.write(f'\n\t\t<Outputs>\n\t\t\t' + "\n\t\t\t".join(outputs) + "\n\t\t</Outputs>")
+            f.write(f'\n\t\t<InitialUnknowns>\n\t\t\t' + "\n\t\t\t".join(outputs) + "\n\t\t</InitialUnknowns>")
+            f.write("""\n\t</ModelStructure>\n</fmiModelDescription>""")
+
     def sync_with_model_description(self):
         from pathlib import Path
         # with open(Path(__file__).parent / 'model_description.json', 'r') as f:
         import xml.etree.ElementTree as ET
 
         # Parse the XML file
-        tree = ET.parse(Path(__file__).parent.parent / 'modelDescription.xml')
+        tree = ET.parse(Path(__file__).parent.parent / 'modelDescription - Robotti.xml')
         root = tree.getroot()
 
         scalar_variables = root.findall('.//ScalarVariable')
         print(scalar_variables)
 
+        def parse_start_value(node:ET.Element):
+            v= node.find('./')
+            if 'start' in v.attrib:
+                if v.tag=="Real":
+                    return float(v.attrib['start'])
+                elif v.tag=="Integer":
+                    return int(v.attrib['start'])
+                elif v.tag=="Boolean":
+                    return bool(int(v.attrib['start']))
+                elif v.tag=="String":
+                    return str(v.attrib['start'])
+            return None
+
         md_ports = {
             (int(sv.attrib['valueReference']), sv.attrib['name'],
-             Fmi2Port(start_value=None, causality=Fmi2Causality.from_string(sv.attrib['causality']), initial=None,
-                      variability=Fmi2Variability.from_string(sv.attrib['variability']))
+             Fmi2Port(start_value=parse_start_value(sv), causality=Fmi2Causality.from_string(sv.attrib['causality'] if 'causality' in sv.attrib else Fmi2Causality.INPUT), initial=Fmi2Initial.from_string(sv.attrib['initial']) if 'initial' in sv.attrib else Fmi2Initial.CALCULATED,
+                      variability=Fmi2Variability.from_string(sv.attrib['variability'] if 'variability' in sv.attrib else Fmi2Variability.FIXED))
 
              )
 
@@ -153,35 +200,16 @@ class ModelState(ABC):
         for p in md_ports:
             print(p)
 
+        self.write_model_description(md_ports)
 
-        with open('md.xml','w')as f:
-            f.write("""<?xml version='1.0' encoding='utf-8'?>
-<fmiModelDescription fmiVersion="2.0" modelName="unifmu" guid="77236337-210e-4e9c-8f2c-c1a0677db21b" author="Christian Møldrup Legaard" generationDateAndTime="2020-10-23T19:51:25Z" variableNamingConvention="flat" generationTool="unifmu">
-  <CoSimulation modelIdentifier="unifmu" needsExecutionTool="true" canNotUseMemoryManagementFunctions="false" canHandleVariableCommunicationStepSize="true" />
-  <LogCategories>
-    <Category name="logStatusWarning" />
-    <Category name="logStatusDiscard" />
-    <Category name="logStatusError" />
-    <Category name="logStatusFatal" />
-    <Category name="logStatusPending" />
-    <Category name="logAll" />
-  </LogCategories>
-    <ModelVariables>
-""")
-            for idx, p in enumerate(md_ports):
-                f.write(f'\t\t<!--Index of variable = "{idx+1}"-->\n')
-                f.write(f'\t\t<ScalarVariable name="{p[1]}" valueReference="{p[0]}" variability="{str(p[2].variability.name.lower())}" causality="{str(p[2].causality.name.lower())}" ')
-                if  p[2].value :
-                    f.write(f'\t\t\t<Boolean start="{str(p[2].value)}" />')
-                    f.write(f'\t\t</ScalarVariable>\n')
-                else:
-                    f.write('/>\n')
-            f.write('''\t</ModelVariables>\n\t<ModelStructure>''')
+        for p in md_ports:
+            print(f'\t\t\t\t self.{p[1]} = Fmi2Port( {p[2].value}, {p[2].causality}, {p[2].initial}, {p[2].variability} )')
+            #start_value=None, causality: Fmi2Causality = Fmi2Causality.INPUT,
+                 # initial: Fmi2Initial = Fmi2Initial.CALCULATED,
+                 # variability: Fmi2Variability = Fmi2Variability.DISCRETE
 
-            outputs = [f'<Unknown index="{idx+1}" dependencies="" />' for idx, p in enumerate(md_ports) if p[2].causality==Fmi2Causality.OUTPUT]
-            f.write(f'\n\t\t<Outputs>\n\t\t\t'+ "\n\t\t\t".join(outputs)+"\n\t\t</Outputs>")
-            f.write(f'\n\t\t<InitialUnknowns>\n\t\t\t' + "\n\t\t\t".join(outputs) + "\n\t\t</InitialUnknowns>")
-            f.write("""\n\t</ModelStructure>\n</fmiModelDescription>""")
+
+
 
 
 class Model:
