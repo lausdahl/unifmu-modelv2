@@ -1,3 +1,3 @@
-linux = ["python3", "backend.py"]
-macos = ["python3", "backend.py"]
+linux = ["sh", "launch.sh"]
+macos = ["sh", "launch.sh"]
 windows = ["python", "backend.py"]
