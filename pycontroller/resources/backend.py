@@ -18,7 +18,7 @@ from schemas.fmi2_messages_pb2 import (
 )
 
 
-class Fmi2Status(Enum):
+class Fmi2Status:
     """
     Represents the status of an FMI2 FMU or the results of function calls.
 
