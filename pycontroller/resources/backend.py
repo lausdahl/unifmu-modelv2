@@ -125,10 +125,10 @@ class ModelState(ABC):
             for idx, k in enumerate(self.__dict__.keys()) if isinstance(getattr(self, k), Fmi2Port)}
 
     def set_value(self, vr, value):
-        return setattr(self.sync_with_model_description[vr], 'value', value)
+        return setattr(self.value_reference_to_port[vr], 'value', value)
 
     def get_value(self, vr):
-        return getattr(self.sync_with_model_description[vr], 'value')
+        return getattr(self.value_reference_to_port[vr], 'value')
 
 
     def write_model_description(self, ports,path='md.xml'):
@@ -207,6 +207,8 @@ class ModelState(ABC):
             #start_value=None, causality: Fmi2Causality = Fmi2Causality.INPUT,
                  # initial: Fmi2Initial = Fmi2Initial.CALCULATED,
                  # variability: Fmi2Variability = Fmi2Variability.DISCRETE
+
+        self.write_model_description([ (idx,k,getattr(self, k)) for idx, k in enumerate(self.__dict__.keys()) if isinstance(getattr(self, k), Fmi2Port)],'new_md.xml')
 
 
 
